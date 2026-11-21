@@ -10,10 +10,11 @@ A chess engine in 4KB of Python for the make.fun tiny-chess-01 bounty.
 
 An alpha-beta chess engine with:
 - 0x88 board representation
-- Iterative deepening search (depth 6, 200K node budget)
-- Quiescence search (captures only)
-- MVV-LVA move ordering
-- Piece-square table evaluation
+- Iterative deepening on a fixed 60K node budget (no clock, fully deterministic)
+- Quiescence search with check evasion
+- Transposition table, null-move pruning, check extensions
+- MVV-LVA + TT-move + killer move ordering
+- Tapered piece-square evaluation (midgame/endgame)
 - Self-extracting LZMA payload (`#coding:l1` + `exec(lzma.decompress(...))`)
 
 ## Run
