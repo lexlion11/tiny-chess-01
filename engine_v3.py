@@ -1,19 +1,8 @@
-# tiny-chess-01 entry source: a compact 0x88 chess engine.
-# Alpha-beta with iterative deepening on a fixed node budget (no clock,
-# no randomness), quiescence, transposition table, null-move pruning,
-# killer ordering, tapered piece-square evaluation; talks to the env
-# over HTTP.
-
 import json, os, sys, urllib.error, urllib.request
-
 MATE = 100000
 INF = 999999
-BUDGET = 75000  # nodes per move: fixed, so every move is deterministic
-
-MV = (0, 100, 320, 330, 500, 900, 0)  # material by piece type
-
-# Piece-square tables, white's view, files a-d stored (e-h mirror a-d),
-# a row at a time from rank 1 up; index = rank*4 + min(file, 7-file).
+BUDGET = 75000
+MV = (0, 100, 320, 330, 500, 900, 0)
 PMG = (0,0,0,0,5,10,10,-20,5,-5,-10,0,0,0,20,20,5,5,10,25,10,10,20,30,50,50,50,50,0,0,0,0)
 PEG = (0,0,0,0,0,0,0,0,5,5,5,10,10,10,15,20,20,20,25,30,35,35,40,45,60,60,65,70,0,0,0,0)
 NMG = (-50,-40,-30,-30,-40,-20,0,5,-30,5,10,15,-30,0,15,20,-30,5,15,20,-30,0,10,15,-40,-20,0,0,-50,-40,-30,-30)
@@ -24,28 +13,22 @@ KMG = (20,30,10,0,20,20,0,0,-10,-20,-10,-10,-20,-30,-10,-15,-30,-40,-20,-20,-30,
 KEG = (-50,-30,-30,-30,-30,-30,0,0,-30,-10,20,30,-30,-10,30,40,-30,-10,30,40,-30,-10,20,30,-30,-20,-10,0,-50,-30,-30,-30)
 TAB = ((),PMG,NMG,BMG,RMG,QMG,KMG)
 TEG = ((),PEG,NMG,BMG,RMG,QMG,KEG)
-
 KN = (33,31,18,14,-33,-31,-18,-14)
 KG = (16,-16,1,-1,15,-15,17,-17)
 DG = (15,17,-15,-17)
 RT = (16,-16,1,-1)
-SQ = tuple(s for s in range(128) if not s & 0x88)  # valid 0x88 squares
-
-bd = [0]*128  # board: signed piece codes, white positive
-sd = 1        # side to move
-cr = 0        # castling rights: 1 WK, 2 WQ, 4 BK, 8 BQ
-ep = -1       # en passant target square
-kw = kb = 4   # king squares
-hist = []     # make/unmake stack
-tt = {}       # transposition table
-kl = {}       # killer moves by ply
-ht = {}       # history heuristic (from, to) -> score
+SQ = tuple(s for s in range(128) if not s & 0x88)
+bd = [0]*128
+sd = 1
+cr = 0
+ep = -1
+kw = kb = 4
+hist = []
+tt = {}
+kl = {}
+ht = {}
 nodes = 0
-
-
 class _Stop(Exception): pass
-
-
 def setpos(fen):
     global bd, sd, cr, ep, kw, kb, hist
     bd = [0]*128
@@ -73,10 +56,7 @@ def setpos(fen):
     if len(pr) > 3 and pr[3] != "-":
         ep = (ord(pr[3][0]) - 97) + (int(pr[3][1]) - 1)*16
     hist = []
-
-
 def atk(sq, by):
-    # is sq attacked by side by (1 white, -1 black)?
     if by > 0:
         for o in (-15,-17):
             s = sq + o
@@ -114,11 +94,7 @@ def atk(sq, by):
                 break
             s += o
     return False
-
-
 def gen():
-    # pseudo-legal moves as (frm, to, promo, flag); flag: 0 plain,
-    # 1 en passant, 2 castle, 3 double pawn push
     mv = []
     for sq in SQ:
         p = bd[sq]
@@ -186,8 +162,6 @@ def gen():
                 and not atk(116,1) and not atk(115,1) and not atk(114,1)):
             mv.append((116,114,0,2))
     return mv
-
-
 def make(m):
     global sd, cr, ep, kw, kb
     f, t, pr, fl = m
@@ -225,8 +199,6 @@ def make(m):
     if f == 119 or t == 119:
         cr &= ~4
     sd = -sd
-
-
 def unmake(m):
     global sd, cr, ep, kw, kb
     sd = -sd
@@ -254,20 +226,12 @@ def unmake(m):
             bd[119] = bd[117]; bd[117] = 0
         else:
             bd[112] = bd[115]; bd[115] = 0
-
-
 def chk():
     return atk(kw if sd > 0 else kb, -sd)
-
-
-def illegal():  # after make: did the mover leave his king attacked?
+def illegal():
     return atk(kw if sd < 0 else kb, sd)
-
-
-def cap(m):  # capture, en passant or promotion (for quiescence)
+def cap(m):
     return bd[m[1]] or m[2] or m[3] == 1
-
-
 def evaluate():
     mg = eg = ph = bc = 0
     for sq in SQ:
@@ -306,16 +270,12 @@ def evaluate():
         if not s & 0x88 and bd[s] == -1:
             mg -= 10
     return (mg*ph + eg*(24-ph)) // 24 * sd
-
-
-def big():  # a piece besides pawns and king (null-move safe)
+def big():
     for sq in SQ:
         p = bd[sq]
         if p*sd > 0 and 1 < abs(p) < 6:
             return True
     return False
-
-
 def qsearch(a, b, ply):
     global nodes
     nodes += 1
@@ -347,8 +307,6 @@ def qsearch(a, b, ply):
                 if s >= b:
                     return s
     return best
-
-
 def search(depth, a, b, ply):
     global nodes, sd, ep
     nodes += 1
@@ -432,10 +390,7 @@ def search(depth, a, b, ply):
         tt.clear()
     tt[key] = (depth, best, flag, bm)
     return best
-
-
 def go():
-    # search the position; return the best move (None if none legal)
     global nodes
     nodes = 0
     kl.clear()
@@ -477,24 +432,16 @@ def go():
         except _Stop:
             break
     return best
-
-
 def sqn(s):
     return chr(97 + (s & 7)) + chr(49 + (s >> 4))
-
-
 def uci(m):
     return sqn(m[0]) + sqn(m[1]) + ("nbrq"[m[2]-2] if m[2] else "")
-
-
 def post(url, body):
     req = urllib.request.Request(
         url, data=json.dumps(body).encode(),
         headers={"content-type": "application/json"})
     with urllib.request.urlopen(req) as r:
         return json.load(r)
-
-
 def main():
     env = os.environ.get("MAKEFUN_ENV_URL") or sys.exit("MAKEFUN_ENV_URL is not set")
     while True:
@@ -513,7 +460,5 @@ def main():
             except urllib.error.HTTPError:
                 g = post(env + "/game", {})
     print("trial: %sW %sD %sL" % (g.get("wins"), g.get("draws"), g.get("losses")), file=sys.stderr)
-
-
 if __name__ == "__main__":
     main()
